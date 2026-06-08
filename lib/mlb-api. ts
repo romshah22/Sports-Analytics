@@ -1,0 +1,67 @@
+// lib/mlb-api.ts
+// This file contains ALL calls to the MLB Stats API.
+// It's free, no API key needed — the same data MLB.com uses.
+
+const BASE = 'https://statsapi.mlb.com/api/v1';
+
+// Search players by name — returns an array of player objects
+export async function searchPlayers(query: string) {
+  const res = await fetch(
+    `${BASE}/people/search?names=${encodeURIComponent(query)}&sportId=1`
+  );
+  const data = await res.json();
+  return data.people || [];
+}
+
+// Get a single player's full profile info
+export async function getPlayer(id: number) {
+  const res = await fetch(`${BASE}/people/${id}?hydrate=currentTeam`);
+  const data = await res.json();
+  return data.people?.[0] || null;
+}
+
+// Get a player's 2025 season stats (hitting or pitching)
+export async function getPlayerStats(id: number) {
+  const res = await fetch(
+    `${BASE}/people/${id}/stats?stats=season&group=hitting,pitching&season=2025&sportId=1`
+  );
+  const data = await res.json();
+  return data.stats || [];
+}
+
+// Get a player's last 10 games
+export async function getPlayerGameLog(id: number) {
+  const res = await fetch(
+    `${BASE}/people/${id}/stats?stats=gameLog&group=hitting,pitching&season=2025`
+  );
+  const data = await res.json();
+  const splits = data.stats?.[0]?.splits || [];
+  return splits.slice(-10).reverse();
+}
+
+// Get career head-to-head stats between a batter and pitcher
+export async function getHeadToHead(batterId: number, pitcherId: number) {
+  const res = await fetch(
+    `${BASE}/people/${batterId}/stats?stats=vsPlayer&opposingPlayerId=${pitcherId}&group=hitting`
+  );
+  const data = await res.json();
+  return data.stats?.[0]?.splits?.[0]?.stat || null;
+}
+
+// Get AL and NL standings
+export async function getStandings() {
+  const res = await fetch(
+    `${BASE}/standings?leagueId=103,104&season=2025&standingsTypes=regularSeason&hydrate=team,division`
+  );
+  const data = await res.json();
+  return data.records || [];
+}
+
+// Get games for a specific date (format: "2025-06-08")
+export async function getSchedule(date: string) {
+  const res = await fetch(
+    `${BASE}/schedule?sportId=1&date=${date}&hydrate=team,linescore`
+  );
+  const data = await res.json();
+  return data.dates?.[0]?.games || [];
+}

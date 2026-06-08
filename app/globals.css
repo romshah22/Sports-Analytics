@@ -1,26 +1,42 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --navy: #0a1628;
+  --navy2: #0f2044;
+  --navy3: #162a52;
+  --accent: #e8321a;
+  --accent2: #f5a623;
+  --text: #e8eef7;
+  --muted: #7a9bbf;
+  --border: #1e3a5f;
+  --card: #0d1f3c;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--navy);
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+}
+
+input, select {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: 'Barlow', sans-serif;
+  outline: none;
+}
+
+input:focus, select:focus {
+  border-color: var(--accent2);
 }

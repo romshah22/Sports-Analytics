@@ -1,65 +1,113 @@
-import Image from "next/image";
+// app/page.tsx
+// This is your homepage — the first thing users see at localhost:3000
+// It's a Server Component (no 'use client') so it loads fast.
 
-export default function Home() {
+import Link from 'next/link';
+
+export default function HomePage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div>
+      {/* Hero Section */}
+      <div style={{
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: '12px',
+        padding: '48px',
+        marginBottom: '24px',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          position: 'absolute', right: '48px', top: '50%',
+          transform: 'translateY(-50%)', fontSize: '100px', opacity: 0.06,
+        }}>⚾</div>
+
+        <span style={{
+          background: 'var(--accent)', color: '#fff',
+          fontSize: '11px', fontWeight: 600, padding: '3px 10px',
+          borderRadius: '4px', letterSpacing: '1px', display: 'inline-block',
+          marginBottom: '16px',
+        }}>
+          2025 MLB SEASON — LIVE DATA
+        </span>
+
+        <h1 style={{
+          fontFamily: "'Barlow Condensed', sans-serif",
+          fontSize: '44px', fontWeight: 700, lineHeight: 1.1,
+          marginBottom: '16px',
+        }}>
+          Baseball Analytics<br />
+          <span style={{ color: 'var(--accent2)' }}>Built Different.</span>
+        </h1>
+
+        <p style={{ color: 'var(--muted)', fontSize: '16px', maxWidth: '500px', lineHeight: 1.7 }}>
+          Real-time stats, pitcher vs. batter matchups, live standings, and AI-powered
+          insights — all powered by the official MLB Stats API.
+        </p>
+
+        <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+          <Link href="/players" style={{
+            background: 'var(--accent)', color: '#fff', padding: '10px 24px',
+            borderRadius: '8px', fontWeight: 600, textDecoration: 'none', fontSize: '14px',
+          }}>
+            Search Players →
+          </Link>
+          <Link href="/standings" style={{
+            background: 'transparent', color: 'var(--text)', padding: '10px 24px',
+            borderRadius: '8px', fontWeight: 600, textDecoration: 'none', fontSize: '14px',
+            border: '1px solid var(--border)',
+          }}>
+            View Standings
+          </Link>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </div>
+
+      {/* Stats Overview Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+        {[
+          { val: '750+', label: 'Active Players' },
+          { val: '30', label: 'MLB Teams' },
+          { val: '162', label: 'Game Season' },
+          { val: 'Free', label: 'No API Key Needed' },
+        ].map((s) => (
+          <div key={s.label} style={{
+            background: 'var(--card)', border: '1px solid var(--border)',
+            borderRadius: '10px', padding: '20px', textAlign: 'center',
+          }}>
+            <div style={{
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontSize: '32px', fontWeight: 700, color: 'var(--accent2)',
+            }}>{s.val}</div>
+            <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              {s.label}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Feature Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+        {[
+          { href: '/players', icon: '🔍', title: 'Player Search', desc: 'Search any active MLB player. View season stats, game logs, and home/away splits.' },
+          { href: '/h2h', icon: '⚔️', title: 'Head-to-Head', desc: 'Pick any pitcher and batter. See their all-time matchup history and stats.' },
+          { href: '/standings', icon: '🏆', title: 'Live Standings', desc: 'AL and NL standings updated in real time from the official MLB Stats API.' },
+        ].map((f) => (
+          <Link key={f.href} href={f.href} style={{ textDecoration: 'none' }}>
+            <div style={{
+              background: 'var(--card)', border: '1px solid var(--border)',
+              borderRadius: '10px', padding: '24px', cursor: 'pointer',
+              transition: 'border-color .15s',
+            }}>
+              <div style={{ fontSize: '28px', marginBottom: '12px' }}>{f.icon}</div>
+              <div style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: '18px', fontWeight: 700, marginBottom: '8px',
+              }}>{f.title}</div>
+              <div style={{ fontSize: '13px', color: 'var(--muted)', lineHeight: 1.6 }}>{f.desc}</div>
+            </div>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
