@@ -9,6 +9,7 @@ import { usePathname } from 'next/navigation';
 const links = [
   { href: '/', label: 'Home' },
   { href: '/players', label: 'Players' },
+  { href: '/preview', label: "Tonight's Games" },
   { href: '/h2h', label: 'Head-to-Head' },
   { href: '/standings', label: 'Standings' },
   { href: '/schedule', label: 'Schedule' },
