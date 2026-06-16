@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getPlayer, getPlayerStats, getPlayerGameLog } from '@/lib/mlb-api';
 import StatTooltip from '@/components/StatTooltip';
+import GeminiAnalysis from '@/components/GeminiAnalysis';
 import Link from 'next/link';
 
 export default function PlayerProfile({ params }: { params: Promise<{ id: string }> }) {
@@ -23,9 +24,10 @@ export default function PlayerProfile({ params }: { params: Promise<{ id: string
   // Load player info once
   useEffect(() => {
     if (!id) return;
+    const playerId = id;
     async function loadPlayer() {
       try {
-        const p = await getPlayer(id);
+        const p = await getPlayer(playerId);
         setPlayer(p);
       } catch (err) {
         console.error(err);
@@ -39,13 +41,14 @@ export default function PlayerProfile({ params }: { params: Promise<{ id: string
   // Reload stats whenever view or season changes
   useEffect(() => {
     if (!id) return;
+    const playerId = id;
     async function loadStats() {
       setStatsLoading(true);
       try {
         const season = view === 'career' ? undefined : selectedSeason;
         const [stats, log] = await Promise.all([
-          getPlayerStats(id, season),
-          view === 'season' ? getPlayerGameLog(id, selectedSeason) : Promise.resolve([]),
+          getPlayerStats(playerId, season),
+          view === 'season' ? getPlayerGameLog(playerId, selectedSeason) : Promise.resolve([]),
         ]);
         setStatsData(stats);
         setGameLog(log);
@@ -57,6 +60,45 @@ export default function PlayerProfile({ params }: { params: Promise<{ id: string
     }
     loadStats();
   }, [id, view, selectedSeason]);
+
+  const hittingStats = statsData.find((s: any) => s.group?.displayName === 'hitting')?.splits?.[0]?.stat;
+  const pitchingStats = statsData.find((s: any) => s.group?.displayName === 'pitching')?.splits?.[0]?.stat;
+  const isPitcher = !!pitchingStats && !hittingStats;
+
+  const geminiPrompt = useMemo(() => {
+    if (!player || statsLoading) return '';
+
+    const statsBlock = isPitcher
+      ? `Pitching Stats (${view === 'career' ? 'Career' : selectedSeason}):
+- ERA: ${pitchingStats?.era ?? 'N/A'}
+- WHIP: ${pitchingStats?.whip ?? 'N/A'}
+- Wins: ${pitchingStats?.wins ?? 'N/A'} | Losses: ${pitchingStats?.losses ?? 'N/A'}
+- Strikeouts: ${pitchingStats?.strikeOuts ?? 'N/A'}
+- Innings Pitched: ${pitchingStats?.inningsPitched ?? 'N/A'}
+- Walks: ${pitchingStats?.baseOnBalls ?? 'N/A'}`
+      : `Hitting Stats (${view === 'career' ? 'Career' : selectedSeason}):
+- AVG: ${hittingStats?.avg ?? 'N/A'} | OBP: ${hittingStats?.obp ?? 'N/A'} | SLG: ${hittingStats?.slg ?? 'N/A'}
+- OPS: ${hittingStats?.ops ?? 'N/A'}
+- Home Runs: ${hittingStats?.homeRuns ?? 'N/A'} | RBI: ${hittingStats?.rbi ?? 'N/A'}
+- Strikeouts: ${hittingStats?.strikeOuts ?? 'N/A'} | Walks: ${hittingStats?.baseOnBalls ?? 'N/A'}`;
+
+    return `You are an expert MLB analyst. Write a detailed performance summary for ${player.fullName}.
+
+Position: ${player.primaryPosition?.name || 'Unknown'}
+Team: ${player.currentTeam?.name || 'Unknown'}
+Bats: ${player.batSide?.description || 'Unknown'} | Throws: ${player.pitchHand?.description || 'Unknown'}
+
+${statsBlock}
+
+Write a comprehensive analysis covering:
+1. Overall performance assessment for this ${view === 'career' ? 'career' : 'season'}
+2. Strengths and standout metrics
+3. Areas for improvement or concern
+4. Comparison to league average at their position
+5. Outlook and what to watch going forward
+
+Be specific with baseball terminology. 200-300 words.`;
+  }, [player, hittingStats, pitchingStats, isPitcher, view, selectedSeason, statsLoading]);
 
   if (loading || !id) {
     return (
@@ -70,9 +112,6 @@ export default function PlayerProfile({ params }: { params: Promise<{ id: string
     return <div style={{ color: 'var(--muted)' }}>Player not found.</div>;
   }
 
-  const hittingStats = statsData.find((s: any) => s.group?.displayName === 'hitting')?.splits?.[0]?.stat;
-  const pitchingStats = statsData.find((s: any) => s.group?.displayName === 'pitching')?.splits?.[0]?.stat;
-  const isPitcher = !!pitchingStats && !hittingStats;
   const initials = player.fullName.split(' ').map((w: string) => w[0]).join('').slice(0, 2);
 
   return (
@@ -209,22 +248,14 @@ export default function PlayerProfile({ params }: { params: Promise<{ id: string
       </div>
 
       {/* AI Insight */}
-      <div style={{
-        background: 'var(--card)', border: '1px solid var(--border)',
-        borderLeft: '3px solid var(--accent2)',
-        borderRadius: '10px', padding: '20px', marginBottom: '16px',
-      }}>
-        <div style={{
-          color: 'var(--accent2)', fontSize: '12px', fontWeight: 600,
-          textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px',
-        }}>
-          ✦ AI Performance Summary
-        </div>
-        <p style={{ color: 'var(--muted)', fontSize: '13px', lineHeight: 1.7, fontStyle: 'italic', margin: 0 }}>
-          AI-generated performance summary for {player.fullName} ({view === 'career' ? 'career' : `${selectedSeason} season`})
-          will appear here in v2, powered by OpenAI.
-        </p>
-      </div>
+      {!statsLoading && geminiPrompt && (
+        <GeminiAnalysis
+          prompt={geminiPrompt}
+          label="✨ Gemini AI Performance Summary"
+          loadingLabel="Gemini analyzing performance..."
+          deps={[player.id, view, selectedSeason]}
+        />
+      )}
 
       {/* Stats Loading */}
       {statsLoading && (

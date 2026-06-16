@@ -91,14 +91,72 @@ export async function getGamePreview(gamePk: number) {
   return data;
 }
 
-// NEW — Get team's last 10 games for recent form
-export async function getTeamRecentForm(teamId: number) {
+// Get team's last 10 game results (W/L)
+export async function getTeamRecentForm(teamId: number): Promise<string[]> {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - 45);
+  const fmt = (d: Date) => d.toISOString().split('T')[0];
+
   const res = await fetch(
-    `${BASE}/teams/${teamId}/stats?stats=gameLog&group=hitting&season=2026&gameType=R`
+    `${BASE}/schedule?sportId=1&teamId=${teamId}&startDate=${fmt(start)}&endDate=${fmt(end)}&hydrate=linescore,team`
   );
   const data = await res.json();
-  const splits = data.stats?.[0]?.splits || [];
-  return splits.slice(-10).reverse();
+  const games = (data.dates || [])
+    .flatMap((d: { games?: unknown[] }) => d.games || [])
+    .filter((g: { status?: { detailedState?: string } }) => g.status?.detailedState === 'Final')
+    .slice(-10);
+
+  return games.map((g: any) => {
+    const isHome = g.teams?.home?.team?.id === teamId;
+    const teamScore = isHome ? g.teams?.home?.score : g.teams?.away?.score;
+    const oppScore = isHome ? g.teams?.away?.score : g.teams?.home?.score;
+    return teamScore > oppScore ? 'W' : 'L';
+  });
+}
+
+// Get team season hitting + pitching stats
+export async function getTeamSeasonStats(teamId: number, season = 2026) {
+  const [hitRes, pitRes] = await Promise.all([
+    fetch(`${BASE}/teams/${teamId}/stats?stats=season&group=hitting&season=${season}&gameType=R`),
+    fetch(`${BASE}/teams/${teamId}/stats?stats=season&group=pitching&season=${season}&gameType=R`),
+  ]);
+  const hitData = await hitRes.json();
+  const pitData = await pitRes.json();
+  const hitting = hitData.stats?.[0]?.splits?.[0]?.stat;
+  const pitching = pitData.stats?.[0]?.splits?.[0]?.stat;
+  return { hitting, pitching };
+}
+
+// Get head-to-head record between two teams this season
+export async function getTeamHeadToHead(
+  team1Id: number,
+  team2Id: number,
+  season = 2026
+) {
+  const res = await fetch(
+    `${BASE}/schedule?sportId=1&teamId=${team1Id}&season=${season}&gameType=R&hydrate=linescore,team`
+  );
+  const data = await res.json();
+  const games = (data.dates || [])
+    .flatMap((d: { games?: unknown[] }) => d.games || [])
+    .filter(
+      (g: any) =>
+        g.status?.detailedState === 'Final' &&
+        (g.teams?.away?.team?.id === team2Id || g.teams?.home?.team?.id === team2Id)
+    );
+
+  let team1Wins = 0;
+  let team2Wins = 0;
+  games.forEach((g: any) => {
+    const t1Home = g.teams?.home?.team?.id === team1Id;
+    const t1Score = t1Home ? g.teams?.home?.score : g.teams?.away?.score;
+    const t2Score = t1Home ? g.teams?.away?.score : g.teams?.home?.score;
+    if (t1Score > t2Score) team1Wins++;
+    else team2Wins++;
+  });
+
+  return { team1Wins, team2Wins, totalGames: games.length };
 }
 
 // Get all active MLB players (cached for search)

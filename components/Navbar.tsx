@@ -12,7 +12,7 @@ const links = [
   { href: '/compare', label: 'Compare' },
   { href: '/preview', label: "Tonight's Games" },
   { href: '/h2h', label: 'Head-to-Head' },
-  { href: '/odds', label: 'Odds' },
+  { href: '/odds', label: 'MLB Odds' },
   { href: '/standings', label: 'Standings' },
 ];
 

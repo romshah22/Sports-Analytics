@@ -1,111 +1,355 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getSchedule } from '@/lib/mlb-api';
+import {
+  fetchEspnOdds,
+  findOddsForGame,
+  formatOdds,
+  getImpliedProbability,
+  type OddsData,
+} from '@/lib/odds-utils';
+import GeminiAnalysis from '@/components/GeminiAnalysis';
+import DateCalendar from '@/components/DateCalendar';
 
-interface OddsData {
-  gameId: string;
-  awayTeam: string;
-  homeTeam: string;
-  awayMoneyline: number;
-  homeMoneyline: number;
-  spread: number;
-  overUnder: number;
+const ODDS_GUIDE = [
+  {
+    title: 'Moneyline (ML)',
+    desc: 'Pick the outright winner — no spread. Favorites show negative odds (e.g. -150 means bet $150 to win $100). Underdogs show positive odds (e.g. +130 means bet $100 to win $130). Best for backing a team to win regardless of margin.',
+  },
+  {
+    title: 'Run Line (Spread)',
+    desc: 'Baseball\'s point spread, almost always ±1.5 runs. The favorite must win by 2+ runs to cover -1.5; the underdog covers +1.5 by losing by 1 or winning outright. Higher variance than moneyline but better payouts on favorites.',
+  },
+  {
+    title: 'Over/Under (Total)',
+    desc: 'Bet on combined runs scored by both teams. If the line is 8.5, "Over" wins if 9+ runs are scored; "Under" wins if 8 or fewer. Weather, park factors, and pitching matchups heavily influence totals.',
+  },
+  {
+    title: 'First 5 Innings (F5)',
+    desc: 'Same markets as full game but settled after 5 innings. Isolates starting pitcher performance and removes bullpen variance. Popular when a team has a pitching edge but a weak bullpen.',
+  },
+  {
+    title: 'Player Props',
+    desc: 'Bets on individual outcomes: strikeouts, hits, home runs, total bases, etc. Useful when you have an edge on a specific matchup (e.g. a power hitter vs a fly-ball pitcher).',
+  },
+  {
+    title: 'Implied Probability',
+    desc: 'Convert American odds to win %: for -150, implied prob = 150/(150+100) = 60%. Compare implied prob to your own model to find value. The vig (juice) means both sides sum to >100%.',
+  },
+];
+
+function formatDateForAPI(d: Date) {
+  return d.toISOString().split('T')[0];
+}
+
+function OddsGameCard({
+  game,
+  oddsMap,
+  isSelected,
+  onToggle,
+}: {
+  game: any;
+  oddsMap: Map<string, OddsData>;
+  isSelected: boolean;
+  onToggle: () => void;
+}) {
+  const away = game.teams?.away?.team;
+  const home = game.teams?.home?.team;
+  const gameOdds = findOddsForGame(away?.name || '', home?.name || '', oddsMap);
+
+  const awayProbNum = gameOdds
+    ? (getImpliedProbability(gameOdds.awayMoneyline) /
+        (getImpliedProbability(gameOdds.awayMoneyline) +
+          getImpliedProbability(gameOdds.homeMoneyline))) *
+      100
+    : null;
+  const homeProbNum = awayProbNum !== null ? 100 - awayProbNum : null;
+
+  const geminiPrompt = useMemo(() => {
+    if (!isSelected || !gameOdds || !away?.name || !home?.name) return '';
+
+    const awayImplied = (getImpliedProbability(gameOdds.awayMoneyline) * 100).toFixed(1);
+    const homeImplied = (getImpliedProbability(gameOdds.homeMoneyline) * 100).toFixed(1);
+
+    return `You are an expert MLB betting analyst. Analyze this game for serious baseball gamblers.
+
+GAME: ${away.name} @ ${home.name}
+Venue: ${game.venue?.name || 'TBD'}
+
+CURRENT LINES:
+- ${away.name} Moneyline: ${formatOdds(gameOdds.awayMoneyline)} (Implied Win Prob: ${awayImplied}%)
+- ${home.name} Moneyline: ${formatOdds(gameOdds.homeMoneyline)} (Implied Win Prob: ${homeImplied}%)
+- Run Line: ${gameOdds.spread > 0 ? '+' : ''}${gameOdds.spread}
+- Over/Under: ${gameOdds.overUnder} runs
+
+Provide a detailed betting analysis covering:
+1. Which side offers value on the moneyline and why
+2. Run line recommendation — when to take ±1.5 vs ML
+3. Over/under lean based on pitching, park factors, and recent scoring trends
+4. Key situational factors (rest days, travel, bullpen fatigue, weather if relevant)
+5. Your top bet recommendation with confidence (1-10) and a predicted final score
+
+Use your knowledge of current MLB teams and rosters. Be specific and actionable. 250-350 words.`;
+  }, [isSelected, gameOdds, away?.name, home?.name, game.venue?.name]);
+
+  return (
+    <div
+      style={{
+        background: 'var(--card)',
+        border: `1px solid ${isSelected ? 'var(--accent2)' : 'var(--border)'}`,
+        borderRadius: '12px',
+        marginBottom: '16px',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        onClick={onToggle}
+        style={{
+          padding: '20px',
+          cursor: 'pointer',
+          background: isSelected ? 'var(--navy3)' : 'transparent',
+          transition: 'background .15s',
+        }}
+      >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr auto 1fr auto',
+            gap: '20px',
+            alignItems: 'center',
+          }}
+        >
+          <div style={{ textAlign: 'right' }}>
+            <div
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: '18px',
+                fontWeight: 700,
+                marginBottom: '4px',
+              }}
+            >
+              {away?.name}
+            </div>
+            {gameOdds ? (
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent2)' }}>
+                {formatOdds(gameOdds.awayMoneyline)}
+              </div>
+            ) : (
+              <div style={{ fontSize: '12px', color: 'var(--muted)' }}>No odds</div>
+            )}
+          </div>
+
+          <div style={{ minWidth: '140px' }}>
+            {awayProbNum !== null && homeProbNum !== null ? (
+              <>
+                <div
+                  style={{
+                    height: '24px',
+                    borderRadius: '12px',
+                    background: 'var(--navy2)',
+                    display: 'flex',
+                    overflow: 'hidden',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${awayProbNum}%`,
+                      background: 'var(--accent)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      color: '#fff',
+                    }}
+                  >
+                    {awayProbNum.toFixed(0)}%
+                  </div>
+                  <div
+                    style={{
+                      width: `${homeProbNum}%`,
+                      background: 'var(--accent2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      color: '#000',
+                    }}
+                  >
+                    {homeProbNum.toFixed(0)}%
+                  </div>
+                </div>
+                <div
+                  style={{
+                    fontSize: '10px',
+                    color: 'var(--muted)',
+                    textAlign: 'center',
+                    marginTop: '4px',
+                  }}
+                >
+                  Win Prob (no-vig)
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', fontSize: '12px', color: 'var(--muted)' }}>
+                Odds unavailable
+              </div>
+            )}
+          </div>
+
+          <div style={{ textAlign: 'left' }}>
+            <div
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: '18px',
+                fontWeight: 700,
+                marginBottom: '4px',
+              }}
+            >
+              {home?.name}
+            </div>
+            {gameOdds && (
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent2)' }}>
+                {formatOdds(gameOdds.homeMoneyline)}
+              </div>
+            )}
+          </div>
+
+          <div style={{ fontSize: '12px', color: 'var(--muted)', minWidth: '60px', textAlign: 'center' }}>
+            {isSelected ? '▼' : '▶'}
+          </div>
+        </div>
+
+        <div
+          style={{
+            fontSize: '11px',
+            color: 'var(--muted)',
+            marginTop: '12px',
+            paddingTop: '12px',
+            borderTop: '1px solid var(--border)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '8px',
+          }}
+        >
+          <span>O/U: {gameOdds?.overUnder ?? '—'}</span>
+          <span>
+            Run Line:{' '}
+            {gameOdds
+              ? `${gameOdds.spread > 0 ? '+' : ''}${gameOdds.spread.toFixed(1)}`
+              : '—'}
+          </span>
+          <span>
+            {new Date(game.gameDate).toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </span>
+        </div>
+      </div>
+
+      {isSelected && gameOdds && (
+        <div
+          style={{
+            background: 'var(--navy2)',
+            borderTop: '1px solid var(--border)',
+            padding: '20px',
+          }}
+        >
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '12px',
+              marginBottom: '16px',
+            }}
+          >
+            {[
+              { label: `${away?.name} ML`, value: formatOdds(gameOdds.awayMoneyline), sub: `${(getImpliedProbability(gameOdds.awayMoneyline) * 100).toFixed(1)}% implied` },
+              { label: `${home?.name} ML`, value: formatOdds(gameOdds.homeMoneyline), sub: `${(getImpliedProbability(gameOdds.homeMoneyline) * 100).toFixed(1)}% implied` },
+              { label: 'Over/Under', value: String(gameOdds.overUnder), sub: 'Total runs' },
+              { label: 'Run Line', value: `${gameOdds.spread > 0 ? '+' : ''}${gameOdds.spread.toFixed(1)}`, sub: `${home?.name} side` },
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  padding: '14px',
+                }}
+              >
+                <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+                  {item.label}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontSize: '22px',
+                    fontWeight: 700,
+                    color: 'var(--accent2)',
+                  }}
+                >
+                  {item.value}
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '4px' }}>
+                  {item.sub}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {geminiPrompt && (
+            <GeminiAnalysis
+              prompt={geminiPrompt}
+              label="✨ Gemini AI Betting Analysis"
+              loadingLabel="Gemini analyzing lines..."
+              deps={[game.gamePk, gameOdds.awayMoneyline]}
+            />
+          )}
+        </div>
+      )}
+
+      {isSelected && !gameOdds && (
+        <div
+          style={{
+            background: 'var(--navy2)',
+            borderTop: '1px solid var(--border)',
+            padding: '20px',
+            color: 'var(--muted)',
+            fontSize: '13px',
+          }}
+        >
+          No live odds available for this game yet. Lines typically post 12–24 hours before first pitch.
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function OddsPage() {
   const [date, setDate] = useState(new Date());
   const [games, setGames] = useState<any[]>([]);
-  const [oddsData, setOddsData] = useState<Map<string, OddsData>>(new Map());
+  const [oddsMap, setOddsMap] = useState<Map<string, OddsData>>(new Map());
   const [loading, setLoading] = useState(false);
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
-
-  // Fetch real odds from free API (using ESPN as source)
-  async function fetchRealOdds() {
-    try {
-      // Using ESPN API's public endpoint for odds
-      const res = await fetch('https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard');
-      const data = await res.json();
-      
-      const odds = new Map<string, OddsData>();
-      
-      if (data.events) {
-        data.events.forEach((event: any) => {
-          const awayTeam = event.competitions[0]?.competitors[1]?.team?.name || '';
-          const homeTeam = event.competitions[0]?.competitors[0]?.team?.name || '';
-          
-          // Extract odds if available
-          const oddsDetail = event.competitions[0]?.odds || [];
-          
-          let awayLine = -110;
-          let homeLine = -110;
-          let spread = 0;
-          let overUnder = 8.5;
-          
-          if (oddsDetail.length > 0) {
-            const primaryOdds = oddsDetail[0];
-            // Parse moneyline
-            if (primaryOdds.moneyline) {
-              awayLine = primaryOdds.moneyline.away || -110;
-              homeLine = primaryOdds.moneyline.home || -110;
-            }
-            // Parse spread
-            if (primaryOdds.spread) {
-              spread = primaryOdds.spread.away || 0;
-            }
-            // Parse over/under
-            if (primaryOdds.overUnder) {
-              overUnder = primaryOdds.overUnder || 8.5;
-            }
-          }
-          
-          odds.set(event.id, {
-            gameId: event.id,
-            awayTeam,
-            homeTeam,
-            awayMoneyline: awayLine,
-            homeMoneyline: homeLine,
-            spread,
-            overUnder,
-          });
-        });
-      }
-      
-      setOddsData(odds);
-    } catch (err) {
-      console.error('Error fetching odds:', err);
-      // Fallback to mock odds if API fails
-      generateMockOdds();
-    }
-  }
-
-  function generateMockOdds() {
-    const odds = new Map<string, OddsData>();
-    games.forEach((game, idx) => {
-      const seed = game.teams?.away?.team?.name?.charCodeAt(0) || 0;
-      odds.set(game.gamePk.toString(), {
-        gameId: game.gamePk.toString(),
-        awayTeam: game.teams?.away?.team?.name || '',
-        homeTeam: game.teams?.home?.team?.name || '',
-        awayMoneyline: -110 + (seed % 30) - 15,
-        homeMoneyline: -110 + ((seed + 15) % 30) - 15,
-        spread: ((seed % 10) - 5) * 0.5,
-        overUnder: 8 + (seed % 6),
-      });
-    });
-    setOddsData(odds);
-  }
-
-  function formatDateForAPI(d: Date) {
-    return d.toISOString().split('T')[0];
-  }
+  const [showGuide, setShowGuide] = useState(true);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const data = await getSchedule(formatDateForAPI(date));
-        setGames(data);
+        const [schedule, odds] = await Promise.all([
+          getSchedule(formatDateForAPI(date)),
+          fetchEspnOdds(date),
+        ]);
+        setGames(schedule);
+        setOddsMap(odds);
+        setSelectedGame(null);
       } catch (err) {
         console.error(err);
       } finally {
@@ -115,98 +359,102 @@ export default function OddsPage() {
     load();
   }, [date]);
 
-  useEffect(() => {
-    fetchRealOdds();
-  }, [games]);
-
-  function changeDate(days: number) {
-    const newDate = new Date(date);
-    newDate.setDate(newDate.getDate() + days);
-    setDate(newDate);
-  }
-
-  function goToToday() {
-    setDate(new Date());
-  }
-
-  function formatOdds(line: number) {
-    if (line > 0) return `+${line}`;
-    return line.toString();
-  }
-
-  function getImpliedProbability(moneyline: number): number {
-    if (moneyline > 0) {
-      return 100 / (moneyline + 100);
-    } else {
-      return Math.abs(moneyline) / (Math.abs(moneyline) + 100);
-    }
-  }
-
-  // Mock historical odds data for graph
-  const historicalOdds = [
-    { time: '5 days ago', away: -110, home: -110, ou: 8.5 },
-    { time: '4 days ago', away: -108, home: -112, ou: 8.4 },
-    { time: '3 days ago', away: -105, home: -115, ou: 8.6 },
-    { time: '2 days ago', away: -112, home: -108, ou: 8.5 },
-    { time: 'Yesterday', away: -115, home: -105, ou: 8.7 },
-    { time: 'Today', away: -110, home: -110, ou: 8.5 },
-  ];
-
   return (
     <div>
-      {/* Header */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: '24px',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: '24px',
+          gap: '24px',
+          flexWrap: 'wrap',
+        }}
+      >
         <div>
-          <h1 style={{
-            fontFamily: "'Barlow Condensed', sans-serif",
-            fontSize: '36px', fontWeight: 700, marginBottom: '8px',
-          }}>
+          <h1
+            style={{
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontSize: '36px',
+              fontWeight: 700,
+              marginBottom: '8px',
+            }}
+          >
             MLB Odds
           </h1>
           <p style={{ color: 'var(--muted)', fontSize: '14px' }}>
-            Live betting odds from ESPN — Real-time line movement and historical tracking
+            Live lines from ESPN · Gemini AI betting analysis · Powered by Google Gemini
           </p>
         </div>
+        <DateCalendar selectedDate={date} onSelectDate={setDate} />
+      </div>
 
-        {/* Date Controls */}
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => changeDate(-1)}
+      {/* Odds Education */}
+      <div
+        style={{
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          borderRadius: '12px',
+          marginBottom: '24px',
+          overflow: 'hidden',
+        }}
+      >
+        <button
+          onClick={() => setShowGuide(!showGuide)}
+          style={{
+            width: '100%',
+            padding: '16px 20px',
+            background: 'var(--navy2)',
+            border: 'none',
+            borderBottom: showGuide ? '1px solid var(--border)' : 'none',
+            color: 'var(--text)',
+            cursor: 'pointer',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontSize: '16px',
+            fontWeight: 700,
+          }}
+        >
+          <span>📚 Baseball Betting Guide — Types of Odds Explained</span>
+          <span style={{ color: 'var(--muted)' }}>{showGuide ? '▼' : '▶'}</span>
+        </button>
+        {showGuide && (
+          <div
             style={{
-              background: 'var(--navy3)', border: '1px solid var(--border)',
-              color: 'var(--text)', padding: '8px 16px', borderRadius: '6px',
-              cursor: 'pointer', fontWeight: 600, fontSize: '13px',
-              fontFamily: "'Barlow', sans-serif",
+              padding: '20px',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '16px',
             }}
           >
-            ← Previous
-          </button>
-          <button
-            onClick={goToToday}
-            style={{
-              background: 'var(--accent2)', border: 'none',
-              color: '#000', padding: '8px 16px', borderRadius: '6px',
-              cursor: 'pointer', fontWeight: 600, fontSize: '13px',
-              fontFamily: "'Barlow', sans-serif",
-            }}
-          >
-            Today
-          </button>
-          <button
-            onClick={() => changeDate(1)}
-            style={{
-              background: 'var(--navy3)', border: '1px solid var(--border)',
-              color: 'var(--text)', padding: '8px 16px', borderRadius: '6px',
-              cursor: 'pointer', fontWeight: 600, fontSize: '13px',
-              fontFamily: "'Barlow', sans-serif",
-            }}
-          >
-            Next →
-          </button>
-        </div>
+            {ODDS_GUIDE.map((item) => (
+              <div
+                key={item.title}
+                style={{
+                  background: 'var(--navy3)',
+                  borderRadius: '8px',
+                  padding: '14px',
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: '14px',
+                    color: 'var(--accent2)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  {item.title}
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.6, margin: 0 }}>
+                  {item.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -216,296 +464,36 @@ export default function OddsPage() {
       )}
 
       {!loading && games.length === 0 && (
-        <div style={{
-          background: 'var(--card)', border: '1px solid var(--border)',
-          borderRadius: '12px', padding: '60px', textAlign: 'center',
-          color: 'var(--muted)',
-        }}>
+        <div
+          style={{
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: '12px',
+            padding: '60px',
+            textAlign: 'center',
+            color: 'var(--muted)',
+          }}
+        >
           No games scheduled for this date.
         </div>
       )}
 
-      {!loading && games.map((game) => {
-        const away = game.teams?.away?.team;
-        const home = game.teams?.home?.team;
-        const gameOdds = oddsData.get(game.gamePk.toString());
-        const isSelected = selectedGame === game.gamePk.toString();
-        const awayProb = gameOdds ? (getImpliedProbability(gameOdds.awayMoneyline) * 100).toFixed(1) : '—';
-        const homeProb = gameOdds ? (getImpliedProbability(gameOdds.homeMoneyline) * 100).toFixed(1) : '—';
-
-        return (
-          <div key={game.gamePk} style={{
-            background: 'var(--card)', border: `1px solid ${isSelected ? 'var(--accent2)' : 'var(--border)'}`,
-            borderRadius: '12px', marginBottom: '16px', overflow: 'hidden',
-          }}>
-            {/* Game Summary */}
-            <div
-              onClick={() => setSelectedGame(isSelected ? null : game.gamePk.toString())}
-              style={{
-                padding: '20px', cursor: 'pointer',
-                background: isSelected ? 'var(--navy3)' : 'transparent',
-                transition: 'background .15s',
-              }}
-              onMouseEnter={e => !isSelected && (e.currentTarget.style.background = 'var(--navy2)')}
-              onMouseLeave={e => !isSelected && (e.currentTarget.style.background = 'transparent')}
-            >
-              <div style={{
-                display: 'grid', gridTemplateColumns: '1fr auto 1fr auto', gap: '20px',
-                alignItems: 'center',
-              }}>
-                {/* Away */}
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{
-                    fontFamily: "'Barlow Condensed', sans-serif",
-                    fontSize: '18px', fontWeight: 700, marginBottom: '4px',
-                  }}>
-                    {away?.name}
-                  </div>
-                  {gameOdds && (
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent2)' }}>
-                      {formatOdds(gameOdds.awayMoneyline)}
-                    </div>
-                  )}
-                </div>
-
-                {/* Probability Bar */}
-                <div style={{ minWidth: '120px' }}>
-                  <div style={{
-                    height: '24px', borderRadius: '12px', background: 'var(--navy2)',
-                    display: 'flex', overflow: 'hidden', border: '1px solid var(--border)',
-                  }}>
-                    <div style={{
-                      width: `${awayProb}%`,
-                      background: 'var(--accent)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '10px', fontWeight: 700, color: '#fff',
-                    }}>
-                      {awayProb !== '—' && awayProb}
-                    </div>
-                    <div style={{
-                      flex: 1,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '10px', fontWeight: 700, color: 'var(--muted)',
-                    }}>
-                      {homeProb !== '—' && homeProb}
-                    </div>
-                  </div>
-                  <div style={{
-                    fontSize: '10px', color: 'var(--muted)',
-                    textAlign: 'center', marginTop: '4px',
-                  }}>
-                    Win Prob
-                  </div>
-                </div>
-
-                {/* Home */}
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{
-                    fontFamily: "'Barlow Condensed', sans-serif",
-                    fontSize: '18px', fontWeight: 700, marginBottom: '4px',
-                  }}>
-                    {home?.name}
-                  </div>
-                  {gameOdds && (
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent2)' }}>
-                      {formatOdds(gameOdds.homeMoneyline)}
-                    </div>
-                  )}
-                </div>
-
-                {/* Expand */}
-                <div style={{
-                  fontSize: '12px', color: 'var(--muted)',
-                  textAlign: 'center', minWidth: '60px',
-                }}>
-                  {isSelected ? '▼' : '▶'}
-                </div>
-              </div>
-
-              {/* Quick Info */}
-              <div style={{
-                fontSize: '11px', color: 'var(--muted)',
-                marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border)',
-                display: 'flex', justifyContent: 'space-between',
-              }}>
-                <span>O/U: {gameOdds?.overUnder || '—'}</span>
-                <span>Spread: {gameOdds ? (gameOdds.spread > 0 ? '+' : '') + gameOdds.spread.toFixed(1) : '—'}</span>
-              </div>
-            </div>
-
-            {/* Expanded Odds Detail */}
-            {isSelected && gameOdds && (
-              <div style={{
-                background: 'var(--navy2)', borderTop: '1px solid var(--border)',
-                padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px',
-              }}>
-                {/* Odds */}
-                <div>
-                  <div style={{
-                    fontSize: '12px', fontWeight: 600, color: 'var(--accent2)',
-                    textTransform: 'uppercase', letterSpacing: '0.5px',
-                    marginBottom: '14px',
-                  }}>
-                    💰 Current Odds
-                  </div>
-
-                  <div style={{ display: 'grid', gap: '10px' }}>
-                    <div style={{
-                      background: 'var(--card)', border: '1px solid var(--border)',
-                      borderRadius: '8px', padding: '14px',
-                    }}>
-                      <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
-                        {away?.name} Moneyline
-                      </div>
-                      <div style={{
-                        fontFamily: "'Barlow Condensed', sans-serif",
-                        fontSize: '20px', fontWeight: 700, color: 'var(--accent2)',
-                      }}>
-                        {formatOdds(gameOdds.awayMoneyline)}
-                      </div>
-                      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '4px' }}>
-                        Win Probability: {(getImpliedProbability(gameOdds.awayMoneyline) * 100).toFixed(1)}%
-                      </div>
-                    </div>
-
-                    <div style={{
-                      background: 'var(--card)', border: '1px solid var(--border)',
-                      borderRadius: '8px', padding: '14px',
-                    }}>
-                      <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
-                        {home?.name} Moneyline
-                      </div>
-                      <div style={{
-                        fontFamily: "'Barlow Condensed', sans-serif",
-                        fontSize: '20px', fontWeight: 700, color: 'var(--accent2)',
-                      }}>
-                        {formatOdds(gameOdds.homeMoneyline)}
-                      </div>
-                      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '4px' }}>
-                        Win Probability: {(getImpliedProbability(gameOdds.homeMoneyline) * 100).toFixed(1)}%
-                      </div>
-                    </div>
-
-                    <div style={{
-                      background: 'var(--card)', border: '1px solid var(--border)',
-                      borderRadius: '8px', padding: '14px',
-                    }}>
-                      <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
-                        Over/Under
-                      </div>
-                      <div style={{
-                        fontFamily: "'Barlow Condensed', sans-serif",
-                        fontSize: '20px', fontWeight: 700, color: 'var(--accent2)',
-                      }}>
-                        {gameOdds.overUnder}
-                      </div>
-                      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '4px' }}>
-                        Total runs scored
-                      </div>
-                    </div>
-
-                    <div style={{
-                      background: 'var(--card)', border: '1px solid var(--border)',
-                      borderRadius: '8px', padding: '14px',
-                    }}>
-                      <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
-                        Spread
-                      </div>
-                      <div style={{
-                        fontFamily: "'Barlow Condensed', sans-serif",
-                        fontSize: '20px', fontWeight: 700, color: 'var(--accent2)',
-                      }}>
-                        {(gameOdds.spread > 0 ? '+' : '') + gameOdds.spread.toFixed(1)}
-                      </div>
-                      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '4px' }}>
-                        {home?.name} favored
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Odds Movement Chart */}
-                <div>
-                  <div style={{
-                    fontSize: '12px', fontWeight: 600, color: 'var(--accent2)',
-                    textTransform: 'uppercase', letterSpacing: '0.5px',
-                    marginBottom: '14px',
-                  }}>
-                    📊 Odds Movement (5 Day Trend)
-                  </div>
-
-                  <div style={{
-                    background: 'var(--card)', border: '1px solid var(--border)',
-                    borderRadius: '8px', padding: '14px',
-                    height: '280px', display: 'flex', flexDirection: 'column',
-                  }}>
-                    {/* Simple SVG Chart */}
-                    <svg viewBox="0 0 400 200" style={{ flex: 1 }} xmlns="http://www.w3.org/2000/svg">
-                      {/* Grid */}
-                      {[0, 50, 100, 150, 200].map((y) => (
-                        <line key={`h-${y}`} x1="40" x2="390" y1={y} y2={y} stroke="var(--navy3)" strokeWidth="0.5" />
-                      ))}
-
-                      {/* Away team line */}
-                      <polyline
-                        points={historicalOdds
-                          .map((d, i) => {
-                            const x = 40 + (i / (historicalOdds.length - 1)) * 350;
-                            const y = 150 - ((d.away + 150) / 260) * 150;
-                            return `${x},${y}`;
-                          })
-                          .join(' ')}
-                        fill="none"
-                        stroke="var(--accent)"
-                        strokeWidth="2"
-                      />
-
-                      {/* Home team line */}
-                      <polyline
-                        points={historicalOdds
-                          .map((d, i) => {
-                            const x = 40 + (i / (historicalOdds.length - 1)) * 350;
-                            const y = 150 - ((d.home + 150) / 260) * 150;
-                            return `${x},${y}`;
-                          })
-                          .join(' ')}
-                        fill="none"
-                        stroke="var(--accent2)"
-                        strokeWidth="2"
-                      />
-
-                      {/* Y axis */}
-                      <line x1="40" y1="0" x2="40" y2="200" stroke="var(--border)" strokeWidth="1" />
-                      {/* X axis */}
-                      <line x1="40" y1="150" x2="390" y2="150" stroke="var(--border)" strokeWidth="1" />
-                    </svg>
-
-                    <div style={{
-                      display: 'flex', gap: '16px', fontSize: '11px', marginTop: '10px',
-                      justifyContent: 'center',
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <div style={{
-                          width: '10px', height: '10px', background: 'var(--accent)',
-                          borderRadius: '2px',
-                        }} />
-                        <span>{away?.name}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <div style={{
-                          width: '10px', height: '10px', background: 'var(--accent2)',
-                          borderRadius: '2px',
-                        }} />
-                        <span>{home?.name}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {!loading &&
+        games.map((game) => (
+          <OddsGameCard
+            key={game.gamePk}
+            game={game}
+            oddsMap={oddsMap}
+            isSelected={selectedGame === game.gamePk.toString()}
+            onToggle={() =>
+              setSelectedGame(
+                selectedGame === game.gamePk.toString()
+                  ? null
+                  : game.gamePk.toString()
+              )
+            }
+          />
+        ))}
     </div>
   );
 }
