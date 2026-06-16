@@ -9,10 +9,11 @@ import { usePathname } from 'next/navigation';
 const links = [
   { href: '/', label: 'Home' },
   { href: '/players', label: 'Players' },
+  { href: '/compare', label: 'Compare' },
   { href: '/preview', label: "Tonight's Games" },
   { href: '/h2h', label: 'Head-to-Head' },
+  { href: '/odds', label: 'Odds' },
   { href: '/standings', label: 'Standings' },
-  { href: '/schedule', label: 'Schedule' },
 ];
 
 export default function Navbar() {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { getPlayer, getPlayerStats, getPlayerGameLog } from '@/lib/mlb-api';
+import StatTooltip from '@/components/StatTooltip';
 import Link from 'next/link';
 
 export default function PlayerProfile({ params }: { params: Promise<{ id: string }> }) {
@@ -277,19 +278,7 @@ export default function PlayerProfile({ params }: { params: Promise<{ id: string
               { label: 'SLG', val: hittingStats.slg || '—' },
               { label: 'G', val: hittingStats.gamesPlayed ?? '—' },
             ].map((s) => (
-              <div key={s.label} style={{
-                background: 'var(--navy3)', borderRadius: '8px',
-                padding: '12px', textAlign: 'center',
-              }}>
-                <div style={{
-                  fontFamily: "'Barlow Condensed', sans-serif",
-                  fontSize: '22px', fontWeight: 700, color: '#fff',
-                }}>{s.val}</div>
-                <div style={{
-                  fontSize: '10px', color: 'var(--muted)', marginTop: '4px',
-                  textTransform: 'uppercase', letterSpacing: '0.5px',
-                }}>{s.label}</div>
-              </div>
+              <StatTooltip key={s.label} label={s.label} value={s.val} />
             ))}
 
             {pitchingStats && [
@@ -306,19 +295,7 @@ export default function PlayerProfile({ params }: { params: Promise<{ id: string
               { label: 'K/9', val: pitchingStats.strikeoutsPer9Inn || '—' },
               { label: 'G', val: pitchingStats.gamesPitched ?? '—' },
             ].map((s) => (
-              <div key={s.label} style={{
-                background: 'var(--navy3)', borderRadius: '8px',
-                padding: '12px', textAlign: 'center',
-              }}>
-                <div style={{
-                  fontFamily: "'Barlow Condensed', sans-serif",
-                  fontSize: '22px', fontWeight: 700, color: '#fff',
-                }}>{s.val}</div>
-                <div style={{
-                  fontSize: '10px', color: 'var(--muted)', marginTop: '4px',
-                  textTransform: 'uppercase', letterSpacing: '0.5px',
-                }}>{s.label}</div>
-              </div>
+              <StatTooltip key={s.label} label={s.label} value={s.val} />
             ))}
           </div>
         </div>
