@@ -19,7 +19,7 @@ type MatchupResult = {
   team?: { name?: string; abbreviation?: string };
 } | null;
 
-const seasons = [undefined, 2026, 2025, 2024, 2023, 2022] as const;
+const seasons = [undefined, ...Array.from({length: new Date().getFullYear()-1875}, (_,i)=>new Date().getFullYear()-i)];
 
 function playerMeta(player: Player) {
   return [

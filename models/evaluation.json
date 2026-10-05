@@ -1,0 +1,16 @@
+{
+  "testSeason": 2025,
+  "trainSeasons": [
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "trainGames": 9718,
+  "testGames": 2430,
+  "accuracy": 0.5621399176954732,
+  "homeAlwaysBaseline": 0.5427983539094651,
+  "brierScore": 0.24380842145904408,
+  "logLoss": 0.6806166728702115,
+  "method": "Train on earlier seasons; evaluate once on the following untouched season. Features are prior-season team AVG and ERA differences; intercept learns home advantage. No target-season stats or outcomes are inputs."
+}

@@ -13,14 +13,16 @@ export default function GeminiAnalysis({
   prompt,
   label = '✨ Gemini AI Analysis',
   loadingLabel = 'Gemini AI Analyzing...',
-  deps = [],
+
 }: GeminiAnalysisProps) {
+  const [requested, setRequested] = useState('');
   const [analysis, setAnalysis] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!prompt) return;
+    setAnalysis('');
+    if (!prompt || requested !== prompt) return;
 
     let cancelled = false;
 
@@ -60,7 +62,7 @@ export default function GeminiAnalysis({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompt, ...deps]);
+  }, [prompt, requested]);
 
   return (
     <div
@@ -96,6 +98,7 @@ export default function GeminiAnalysis({
         />
         {loading ? loadingLabel : label}
       </div>
+      {requested !== prompt && <button className="action" onClick={()=>setRequested(prompt)}>Generate AI analysis</button>}
       {error ? (
         <p style={{ color: 'var(--accent)', fontSize: '13px', margin: 0 }}>
           {error}

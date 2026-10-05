@@ -1,3 +1,5 @@
+import { fetchChecked as fetch } from './request';
+
 const BASE = 'https://statsapi.mlb.com/api/v1';
 
 export type MLBPlayer = {
@@ -29,14 +31,14 @@ export async function getPlayer(id: number) {
 export async function getPlayerStats(id: number, season?: number) {
   const seasonParam = season ? `&season=${season}` : '';
   const res = await fetch(
-    `${BASE}/people/${id}/stats?stats=season&group=hitting,pitching${seasonParam}&sportId=1`
+    `${BASE}/people/${id}/stats?stats=${season ? 'season' : 'career'}&group=hitting,pitching${seasonParam}&sportId=1`
   );
   const data = await res.json();
   return data.stats || [];
 }
 
 // Get a player's game log — pass in the year
-export async function getPlayerGameLog(id: number, season: number = 2026) {
+export async function getPlayerGameLog(id: number, season: number = new Date().getFullYear()) {
   const res = await fetch(
     `${BASE}/people/${id}/stats?stats=gameLog&group=hitting,pitching&season=${season}`
   );
@@ -47,18 +49,18 @@ export async function getPlayerGameLog(id: number, season: number = 2026) {
 
 // Get head-to-head stats between a batter and pitcher.
 // Omit season for career stats.
-export async function getHeadToHead(batterId: number, pitcherId: number, season: number = 2026) {
+export async function getHeadToHead(batterId: number, pitcherId: number, season?: number) {
   const res = await fetch(
-    `${BASE}/people/${batterId}/stats?stats=vsPlayer&opposingPlayerId=${pitcherId}&group=hitting&season=${season}`
+    `${BASE}/people/${batterId}/stats?stats=${season ? 'vsPlayer' : 'vsPlayerTotal'}&opposingPlayerId=${pitcherId}&group=hitting${season ? `&season=${season}` : ''}&sportId=1`
   );
   const data = await res.json();
-  return data.stats?.[0]?.splits?.[0]?.stat || null;
+  return data.stats?.[0]?.splits?.[0] || null;
 }
 
 // Get 2026 AL and NL standings
 export async function getStandings() {
   const res = await fetch(
-    `${BASE}/standings?leagueId=103,104&season=2026&standingsTypes=regularSeason&hydrate=team,division`,
+    `${BASE}/standings?leagueId=103,104&season=${new Date().getFullYear()}&standingsTypes=regularSeason&hydrate=team,division`,
     { next: { revalidate: 300 } } // refresh every 5 minutes
   );
   const data = await res.json();
@@ -68,7 +70,7 @@ export async function getStandings() {
 // Get games for a specific date — "2026-04-01"
 export async function getSchedule(date: string) {
   const res = await fetch(
-    `${BASE}/schedule?sportId=1&date=${date}&hydrate=team,linescore`,
+    `${BASE}/schedule?sportId=1&date=${date}&hydrate=team,linescore,probablePitcher`,
     { next: { revalidate: 30 } } // refresh every 30 seconds for live scores
   );
   const data = await res.json();
@@ -92,14 +94,15 @@ export async function getGamePreview(gamePk: number) {
 }
 
 // Get team's last 10 game results (W/L)
-export async function getTeamRecentForm(teamId: number): Promise<string[]> {
-  const end = new Date();
-  const start = new Date();
-  start.setDate(start.getDate() - 45);
+export async function getTeamRecentForm(teamId: number, before = new Date().toISOString().slice(0,10)): Promise<string[]> {
+  const end = new Date(before + 'T12:00:00Z');
+  end.setUTCDate(end.getUTCDate() - 1);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 45);
   const fmt = (d: Date) => d.toISOString().split('T')[0];
 
   const res = await fetch(
-    `${BASE}/schedule?sportId=1&teamId=${teamId}&startDate=${fmt(start)}&endDate=${fmt(end)}&hydrate=linescore,team`
+    `${BASE}/schedule?sportId=1&teamId=${teamId}&gameType=R&startDate=${fmt(start)}&endDate=${fmt(end)}&hydrate=linescore,team`
   );
   const data = await res.json();
   const games = (data.dates || [])
@@ -116,10 +119,12 @@ export async function getTeamRecentForm(teamId: number): Promise<string[]> {
 }
 
 // Get team season hitting + pitching stats
-export async function getTeamSeasonStats(teamId: number, season = 2026) {
+export async function getTeamSeasonStats(teamId: number, season = new Date().getFullYear(), before?: string) {
+  const range = before ? `&startDate=${season}-01-01&endDate=${new Date(new Date(before + "T12:00:00Z").getTime()-86400000).toISOString().slice(0,10)}` : "";
+  const type = before ? "byDateRange" : "season";
   const [hitRes, pitRes] = await Promise.all([
-    fetch(`${BASE}/teams/${teamId}/stats?stats=season&group=hitting&season=${season}&gameType=R`),
-    fetch(`${BASE}/teams/${teamId}/stats?stats=season&group=pitching&season=${season}&gameType=R`),
+    fetch(`${BASE}/teams/${teamId}/stats?stats=${type}&group=hitting&season=${season}&gameType=R${range}`),
+    fetch(`${BASE}/teams/${teamId}/stats?stats=${type}&group=pitching&season=${season}&gameType=R${range}`),
   ]);
   const hitData = await hitRes.json();
   const pitData = await pitRes.json();
@@ -132,7 +137,8 @@ export async function getTeamSeasonStats(teamId: number, season = 2026) {
 export async function getTeamHeadToHead(
   team1Id: number,
   team2Id: number,
-  season = 2026
+  season = new Date().getFullYear(),
+  before?: string
 ) {
   const res = await fetch(
     `${BASE}/schedule?sportId=1&teamId=${team1Id}&season=${season}&gameType=R&hydrate=linescore,team`
@@ -142,7 +148,7 @@ export async function getTeamHeadToHead(
     .flatMap((d: { games?: unknown[] }) => d.games || [])
     .filter(
       (g: any) =>
-        g.status?.detailedState === 'Final' &&
+        g.status?.detailedState === 'Final' && (!before || g.officialDate < before) &&
         (g.teams?.away?.team?.id === team2Id || g.teams?.home?.team?.id === team2Id)
     );
 
@@ -161,12 +167,13 @@ export async function getTeamHeadToHead(
 
 // Get all active MLB players (cached for search)
 let playersCache: MLBPlayer[] | null = null;
+let playersCachedAt = 0;
 
 export async function getAllPlayers(): Promise<MLBPlayer[]> {
-  if (playersCache) return playersCache;
+  if (playersCache && Date.now()-playersCachedAt<3600000) return playersCache;
   
   try {
-    console.log('Fetching all players...');
+
     const res = await fetch(
       `${BASE}/sports/1/players?sportId=1`,
       { next: { revalidate: 3600 } }
@@ -174,16 +181,14 @@ export async function getAllPlayers(): Promise<MLBPlayer[]> {
     const data = await res.json();
     const players = data.people || [];
     
-    console.log(`getAllPlayers returned ${players.length} players`);
-    if (players.length > 0) {
-      console.log('Sample player:', players[0]);
-    }
+
     
     // Filter out players without fullName
     const validPlayers = players.filter((p: any) => p.fullName);
-    console.log(`After filtering: ${validPlayers.length} valid players`);
+
     
     playersCache = validPlayers;
+    playersCachedAt = Date.now();
     return validPlayers;
   } catch (err) {
     console.error('Error fetching players:', err);
@@ -236,4 +241,10 @@ function getEditDistance(s1: string, s2: string): number {
     if (i > 0) costs[s2.length] = lastValue;
   }
   return costs[s2.length];
+}
+
+export async function getPlayerSeasons(id: number): Promise<number[]> {
+  const res = await fetch(`${BASE}/people/${id}/stats?stats=yearByYear&group=hitting,pitching&sportId=1`);
+  const data = await res.json();
+  return [...new Set<number>((data.stats || []).flatMap((s: any) => (s.splits || []).map((v: any) => Number(v.season))))].sort((a,b)=>b-a);
 }

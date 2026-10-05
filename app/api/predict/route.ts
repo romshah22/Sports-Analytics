@@ -1,0 +1,2 @@
+import { predictGame, readModel } from '@/lib/prediction';
+export async function GET(req:Request){const id=new URL(req.url).searchParams.get('gamePk');try{if(!id){const m=await readModel();return Response.json({metrics:m.metrics,features:m.features,trainedAt:m.trainedAt});}if(!/^\d+$/.test(id)||Number(id)<1)return Response.json({error:'Invalid game ID'},{status:400});return Response.json(await predictGame(Number(id)));}catch(e){return Response.json({error:e instanceof Error?e.message:'Prediction unavailable'},{status:503});}}

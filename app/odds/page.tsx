@@ -6,6 +6,7 @@ import {
   fetchEspnOdds,
   findOddsForGame,
   formatOdds,
+  formatLine,
   getImpliedProbability,
   type OddsData,
 } from '@/lib/odds-utils';
@@ -40,7 +41,7 @@ const ODDS_GUIDE = [
 ];
 
 function formatDateForAPI(d: Date) {
-  return d.toISOString().split('T')[0];
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
 function OddsGameCard({
@@ -56,7 +57,7 @@ function OddsGameCard({
 }) {
   const away = game.teams?.away?.team;
   const home = game.teams?.home?.team;
-  const gameOdds = findOddsForGame(away?.name || '', home?.name || '', oddsMap);
+  const gameOdds = findOddsForGame(away?.name || '', home?.name || '', oddsMap, game.gameDate);
 
   const awayProbNum = gameOdds
     ? (getImpliedProbability(gameOdds.awayMoneyline) /
@@ -80,8 +81,8 @@ Venue: ${game.venue?.name || 'TBD'}
 CURRENT LINES:
 - ${away.name} Moneyline: ${formatOdds(gameOdds.awayMoneyline)} (Implied Win Prob: ${awayImplied}%)
 - ${home.name} Moneyline: ${formatOdds(gameOdds.homeMoneyline)} (Implied Win Prob: ${homeImplied}%)
-- Run Line: ${gameOdds.spread > 0 ? '+' : ''}${gameOdds.spread}
-- Over/Under: ${gameOdds.overUnder} runs
+- Run Line: ${formatLine(gameOdds.spread)}
+- Over/Under: ${gameOdds.overUnder ?? 'unavailable'} runs
 
 Provide a detailed betting analysis covering:
 1. Which side offers value on the moneyline and why
@@ -240,7 +241,7 @@ Use your knowledge of current MLB teams and rosters. Be specific and actionable.
           <span>
             Run Line:{' '}
             {gameOdds
-              ? `${gameOdds.spread > 0 ? '+' : ''}${gameOdds.spread.toFixed(1)}`
+              ? `${formatLine(gameOdds.spread)}`
               : '—'}
           </span>
           <span>
@@ -271,8 +272,8 @@ Use your knowledge of current MLB teams and rosters. Be specific and actionable.
             {[
               { label: `${away?.name} ML`, value: formatOdds(gameOdds.awayMoneyline), sub: `${(getImpliedProbability(gameOdds.awayMoneyline) * 100).toFixed(1)}% implied` },
               { label: `${home?.name} ML`, value: formatOdds(gameOdds.homeMoneyline), sub: `${(getImpliedProbability(gameOdds.homeMoneyline) * 100).toFixed(1)}% implied` },
-              { label: 'Over/Under', value: String(gameOdds.overUnder), sub: 'Total runs' },
-              { label: 'Run Line', value: `${gameOdds.spread > 0 ? '+' : ''}${gameOdds.spread.toFixed(1)}`, sub: `${home?.name} side` },
+              { label: 'Over/Under', value: String(gameOdds.overUnder ?? '—'), sub: 'Total runs' },
+              { label: 'Run Line', value: `${formatLine(gameOdds.spread)}`, sub: `${home?.name} side` },
             ].map((item) => (
               <div
                 key={item.label}
@@ -339,28 +340,26 @@ export default function OddsPage() {
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(true);
 
+  const [loadError, setLoadError] = useState('');
   useEffect(() => {
+    let active = true;
     async function load() {
       setLoading(true);
-      try {
-        const [schedule, odds] = await Promise.all([
-          getSchedule(formatDateForAPI(date)),
-          fetchEspnOdds(date),
-        ]);
-        setGames(schedule);
-        setOddsMap(odds);
-        setSelectedGame(null);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+      const [schedule, odds] = await Promise.allSettled([getSchedule(formatDateForAPI(date)), fetchEspnOdds(date)]);
+      if (!active) return;
+      setGames(schedule.status === 'fulfilled' ? schedule.value : []);
+      setOddsMap(odds.status === 'fulfilled' ? odds.value : new Map());
+      setLoadError(schedule.status === 'rejected' ? 'Schedule unavailable. Retrying in 60 seconds.' : odds.status === 'rejected' ? 'ESPN odds unavailable; MLB games still shown.' : '');
+      setLoading(false);
     }
     load();
+    const timer = setInterval(load,60000);
+    return () => { active=false; clearInterval(timer); };
   }, [date]);
 
   return (
     <div>
+      {loadError && <p role="alert">{loadError}</p>}
       <div
         style={{
           display: 'flex',
@@ -383,7 +382,7 @@ export default function OddsPage() {
             MLB Odds
           </h1>
           <p style={{ color: 'var(--muted)', fontSize: '14px' }}>
-            Live lines from ESPN · Gemini AI betting analysis · Powered by Google Gemini
+            Available ESPN lines · Missing markets are shown as unavailable · Refreshes every 60 seconds
           </p>
         </div>
         <DateCalendar selectedDate={date} onSelectDate={setDate} />

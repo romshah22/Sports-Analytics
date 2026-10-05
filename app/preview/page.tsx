@@ -12,12 +12,14 @@ import {
   findOddsForGame,
   getImpliedProbability,
   formatOdds,
+  formatLine,
 } from '@/lib/odds-utils';
 import GeminiAnalysis from '@/components/GeminiAnalysis';
+import PredictionCard from '@/components/PredictionCard';
 import DateCalendar from '@/components/DateCalendar';
 
 function formatDateForAPI(d: Date) {
-  return d.toISOString().split('T')[0];
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
 function formatDateDisplay(d: Date) {
@@ -64,7 +66,7 @@ function WinProbBar({
         <span>
           {awayTeam} {awayPct.toFixed(1)}%
         </span>
-        <span>Win Probability</span>
+        <span>ESPN market probability (no vig)</span>
         <span>
           {homePct.toFixed(1)}% {homeTeam}
         </span>
@@ -137,7 +139,7 @@ interface GameStats {
   awayRecord: string;
   homeRecord: string;
   h2h: string;
-  awayWinPct: number;
+  awayWinPct: number | null;
   oddsSummary: string;
 }
 
@@ -156,29 +158,34 @@ function GamePreviewCard({
   const awayScore = game.teams?.away?.score;
   const homeScore = game.teams?.home?.score;
 
+  const [statsError, setStatsError] = useState('');
   const [stats, setStats] = useState<GameStats | null>(null);
 
   useEffect(() => {
     if (!away?.id || !home?.id) return;
 
+    let active = true;
+    setStats(null); setStatsError('');
+    const before = game.officialDate || game.gameDate.slice(0,10);
+    const year = Number(before.slice(0,4));
     async function loadStats() {
       try {
         const [awayForm, homeForm, awaySeason, homeSeason, h2h, odds] =
           await Promise.all([
-            getTeamRecentForm(away.id),
-            getTeamRecentForm(home.id),
-            getTeamSeasonStats(away.id),
-            getTeamSeasonStats(home.id),
-            getTeamHeadToHead(away.id, home.id),
+            getTeamRecentForm(away.id, before),
+            getTeamRecentForm(home.id, before),
+            getTeamSeasonStats(away.id, year, before),
+            getTeamSeasonStats(home.id, year, before),
+            getTeamHeadToHead(away.id, home.id, year, before),
             Promise.resolve(
-              findOddsForGame(away.name, home.name, oddsMap)
+              findOddsForGame(away.name, home.name, oddsMap, game.gameDate)
             ),
           ]);
 
         const awayWins = awayForm.filter((r) => r === 'W').length;
         const homeWins = homeForm.filter((r) => r === 'W').length;
 
-        let awayWinPct = 47;
+        let awayWinPct: number | null = null;
         let oddsSummary = 'No live odds available';
 
         if (odds) {
@@ -186,16 +193,10 @@ function GamePreviewCard({
           const homeProb = getImpliedProbability(odds.homeMoneyline) * 100;
           const total = awayProb + homeProb;
           awayWinPct = (awayProb / total) * 100;
-          oddsSummary = `${away.name} ML ${formatOdds(odds.awayMoneyline)}, ${home.name} ML ${formatOdds(odds.homeMoneyline)}, O/U ${odds.overUnder}, Run Line ${odds.spread > 0 ? '+' : ''}${odds.spread}`;
-        } else {
-          const awayWinPctRaw =
-            awaySeason.hitting?.wins && awaySeason.hitting?.losses
-              ? awaySeason.hitting.wins /
-                (awaySeason.hitting.wins + awaySeason.hitting.losses)
-              : 0.5;
-          awayWinPct = awayWinPctRaw * 100 * 0.9 + 5;
+          oddsSummary = `${away.name} ML ${formatOdds(odds.awayMoneyline)}, ${home.name} ML ${formatOdds(odds.homeMoneyline)}, O/U ${odds.overUnder ?? 'unavailable'}, Run Line ${formatLine(odds.spread)}`;
         }
 
+        if (!active) return;
         setStats({
           awayForm: awayForm.length ? awayForm : ['—'],
           homeForm: homeForm.length ? homeForm : ['—'],
@@ -205,28 +206,29 @@ function GamePreviewCard({
           homeEra: homeSeason.pitching?.era || '—',
           awayLast10: `${awayWins}-${awayForm.length - awayWins}`,
           homeLast10: `${homeWins}-${homeForm.length - homeWins}`,
-          awayRecord: awaySeason.hitting
-            ? `${awaySeason.hitting.wins}-${awaySeason.hitting.losses}`
+          awayRecord: awaySeason.pitching?.wins !== undefined
+            ? `${awaySeason.pitching.wins}-${awaySeason.pitching.losses}`
             : '—',
-          homeRecord: homeSeason.hitting
-            ? `${homeSeason.hitting.wins}-${homeSeason.hitting.losses}`
+          homeRecord: homeSeason.pitching?.wins !== undefined
+            ? `${homeSeason.pitching.wins}-${homeSeason.pitching.losses}`
             : '—',
           h2h: `${h2h.team1Wins}-${h2h.team2Wins} (${h2h.totalGames} games)`,
           awayWinPct,
           oddsSummary,
         });
-      } catch (err) {
-        console.error(err);
+      } catch {
+        if (active) setStatsError('Team stats unavailable. Please refresh to retry.');
       }
     }
 
     loadStats();
-  }, [away?.id, home?.id, away?.name, home?.name, oddsMap]);
+    return () => { active=false; };
+  }, [away?.id, home?.id, away?.name, home?.name, oddsMap, game.officialDate, game.gameDate]);
 
   const geminiPrompt = useMemo(() => {
     if (!stats || !away?.name || !home?.name) return '';
 
-    return `You are an expert MLB analyst writing for serious baseball fans and sports bettors. Write a detailed game preview for tonight's matchup.
+    return `You are an expert MLB analyst writing for serious baseball fans and sports bettors. Write a detailed game preview for the selected matchup.
 
 GAME: ${away.name} @ ${home.name}
 Venue: ${game.venue?.name || 'TBD'}
@@ -245,18 +247,20 @@ ${home.name} (Home):
 - Recent Form (oldest→newest): ${stats.homeForm.join('-')}
 
 Head-to-Head This Season: ${away.name} ${stats.h2h.split(' ')[0]} vs ${home.name}
-Live Odds: ${stats.oddsSummary}
-Estimated Away Win Probability: ${stats.awayWinPct.toFixed(1)}%
+ESPN odds for selected game (may be pregame/closing lines): ${stats.oddsSummary}
+ESPN market-implied away probability (not ML): ${stats.awayWinPct === null ? 'unavailable' : stats.awayWinPct.toFixed(1)+'%'}
+Probable starters: Away ${game.teams?.away?.probablePitcher?.fullName || 'not announced'}; Home ${game.teams?.home?.probablePitcher?.fullName || 'not announced'}
+Team statistics below are through the day before the selected game.
 
 Write a comprehensive preview covering:
-1. Starting pitching matchup and bullpen outlook (use your knowledge of current MLB rosters)
+1. Announced starting pitchers only; do not infer unprovided pitcher stats or bullpen availability
 2. Key offensive matchups and recent trends
 3. Home field advantage and head-to-head history implications
 4. Betting angle: moneyline, run line, and over/under lean with reasoning
-5. Final score prediction and confidence level
+5. Key uncertainties and a clearly labeled qualitative outlook; do not invent a numeric score
 
 Use specific baseball terminology. Be analytical but readable. 300-400 words.`;
-  }, [stats, away?.name, home?.name, game.venue?.name, game.gameDate]);
+  }, [stats, away?.name, home?.name, game.venue?.name, game.gameDate, game.teams]);
 
   return (
     <div
@@ -379,7 +383,7 @@ Use specific baseball terminology. Be analytical but readable. 300-400 words.`;
           </div>
         </div>
 
-        {!isFinal && stats && (
+        {!isFinal && stats && stats.awayWinPct !== null && (
           <WinProbBar
             awayTeam={away?.abbreviation || 'AWY'}
             homeTeam={home?.abbreviation || 'HME'}
@@ -400,7 +404,7 @@ Use specific baseball terminology. Be analytical but readable. 300-400 words.`;
               { label: 'Team AVG', away: stats.awayAvg, home: stats.homeAvg, lowerBetter: false },
               { label: 'Team ERA', away: stats.awayEra, home: stats.homeEra, lowerBetter: true },
               { label: 'Last 10', away: stats.awayLast10, home: stats.homeLast10, lowerBetter: false },
-              { label: 'H2H', away: stats.h2h.split(' ')[0], home: stats.h2h.split(' ')[0], lowerBetter: false },
+              { label: 'H2H', away: stats.h2h.split(' ')[0], home: stats.h2h.split(' ')[0].split('-').reverse().join('-'), lowerBetter: false },
             ].map((stat) => {
               const numA = parseFloat(stat.away);
               const numB = parseFloat(stat.home);
@@ -456,6 +460,8 @@ Use specific baseball terminology. Be analytical but readable. 300-400 words.`;
           </div>
         )}
 
+        {statsError && <p role="alert">{statsError}</p>}
+        <PredictionCard gamePk={game.gamePk} />
         {geminiPrompt && (
           <GeminiAnalysis
             prompt={geminiPrompt}
@@ -477,27 +483,26 @@ export default function PreviewPage() {
   >(new Map());
   const [loading, setLoading] = useState(true);
 
+  const [loadError, setLoadError] = useState('');
   useEffect(() => {
+    let active = true;
     async function load() {
       setLoading(true);
-      try {
-        const [schedule, odds] = await Promise.all([
-          getSchedule(formatDateForAPI(selectedDate)),
-          fetchEspnOdds(selectedDate),
-        ]);
-        setGames(schedule);
-        setOddsMap(odds);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+      const [schedule, odds] = await Promise.allSettled([getSchedule(formatDateForAPI(selectedDate)), fetchEspnOdds(selectedDate)]);
+      if (!active) return;
+      setGames(schedule.status === 'fulfilled' ? schedule.value : []);
+      setOddsMap(odds.status === 'fulfilled' ? odds.value : new Map());
+      setLoadError(schedule.status === 'rejected' ? 'Schedule unavailable. Retrying in 60 seconds.' : odds.status === 'rejected' ? 'ESPN odds unavailable; MLB games still shown.' : '');
+      setLoading(false);
     }
     load();
+    const timer = setInterval(load,60000);
+    return () => { active=false; clearInterval(timer); };
   }, [selectedDate]);
 
   return (
     <div>
+      {loadError && <p role="alert">{loadError}</p>}
       <div
         style={{
           background: 'var(--card)',

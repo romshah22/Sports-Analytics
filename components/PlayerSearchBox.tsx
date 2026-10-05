@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { fuzzyMatch, searchPlayers } from '@/lib/mlb-api';
 import { Search } from 'lucide-react';
 
 type Player = {
@@ -36,15 +37,24 @@ export default function PlayerSearchBox({
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [remote, setRemote] = useState<Player[]>([]);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    setRemote([]); setError('');
+    if (query.trim().length < 2) return;
+    const timer = setTimeout(() => searchPlayers(query.trim()).then(p => { if(active) setRemote(p); }).catch(() => { if(active) setError('Historical search unavailable. Local matches shown.'); }), 350);
+    return () => { active=false; clearTimeout(timer); };
+  }, [query]);
 
   const results = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    const filtered = players.filter((p) => p.id !== excludeId);
+    const filtered = [...new Map([...players, ...remote].map(p=>[p.id,p])).values()].filter((p) => p.id !== excludeId);
     if (!normalized) return filtered.slice(0, 10);
-    return filtered
-      .filter((p) => p.fullName.toLowerCase().includes(normalized))
-      .slice(0, 10);
-  }, [players, query, excludeId]);
+    const direct = filtered.filter(p => p.fullName.toLowerCase().includes(normalized));
+    const fuzzy = fuzzyMatch(normalized, filtered.map(p=>p.fullName));
+    return [...direct, ...filtered.filter(p=>fuzzy.includes(p.fullName) && !direct.includes(p))].slice(0,10);
+  }, [players, remote, query, excludeId]);
 
   if (selected) {
     return (
@@ -158,6 +168,7 @@ export default function PlayerSearchBox({
           }}
         />
         <input
+          aria-label={label}
           type="text"
           value={query}
           onChange={(e) => {
@@ -179,6 +190,8 @@ export default function PlayerSearchBox({
           }}
         />
       </div>
+      {error && <p role="status">{error}</p>}
+      {open && query.length > 1 && results.length === 0 && <p>No matching players found.</p>}
       {open && results.length > 0 && (
         <div
           style={{

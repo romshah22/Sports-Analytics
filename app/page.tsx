@@ -28,7 +28,7 @@ export default function HomePage() {
           borderRadius: '4px', letterSpacing: '1px', display: 'inline-block',
           marginBottom: '16px',
         }}>
-          2025 MLB SEASON — LIVE DATA
+          {new Date().getFullYear()} MLB SEASON — LIVE DATA
         </span>
 
         <h1 style={{

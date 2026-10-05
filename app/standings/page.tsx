@@ -2,6 +2,8 @@
 // This is a Server Component — no 'use client' needed because
 // we're just fetching data and displaying it, no user interaction.
 
+export const dynamic = 'force-dynamic';
+
 import { getStandings } from '@/lib/mlb-api';
 
 // Helper to get division name from the API data
@@ -28,12 +30,13 @@ export default async function StandingsPage() {
         fontFamily: "'Barlow Condensed', sans-serif",
         fontSize: '36px', fontWeight: 700, marginBottom: '8px',
       }}>
-        2025 MLB Standings
+        {new Date().getFullYear()} MLB Standings
       </h1>
       <p style={{ color: 'var(--muted)', marginBottom: '28px', fontSize: '14px' }}>
         Live standings pulled from the official MLB Stats API.
       </p>
 
+      {records.length === 0 && <p role="status">Standings are unavailable. Please refresh to try again.</p>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
         {/* American League */}
         <div>

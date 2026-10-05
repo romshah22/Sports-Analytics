@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { getPlayer, getPlayerStats, getPlayerGameLog } from '@/lib/mlb-api';
+import { getPlayer, getPlayerStats, getPlayerSeasons, getPlayerGameLog } from '@/lib/mlb-api';
 import StatTooltip from '@/components/StatTooltip';
 import GeminiAnalysis from '@/components/GeminiAnalysis';
 import Link from 'next/link';
@@ -9,7 +9,9 @@ import Link from 'next/link';
 export default function PlayerProfile({ params }: { params: Promise<{ id: string }> }) {
   const [id, setId] = useState<number | null>(null);
   const [view, setView] = useState<'season' | 'career'>('season');
-  const [selectedSeason, setSelectedSeason] = useState(2026);
+  const [selectedSeason, setSelectedSeason] = useState(new Date().getFullYear());
+  const [seasons, setSeasons] = useState<number[]>([]);
+  const [error, setError] = useState('');
   const [player, setPlayer] = useState<any>(null);
   const [statsData, setStatsData] = useState<any[]>([]);
   const [gameLog, setGameLog] = useState<any[]>([]);
@@ -27,8 +29,8 @@ export default function PlayerProfile({ params }: { params: Promise<{ id: string
     const playerId = id;
     async function loadPlayer() {
       try {
-        const p = await getPlayer(playerId);
-        setPlayer(p);
+        const [p, years] = await Promise.all([getPlayer(playerId),getPlayerSeasons(playerId)]);
+        setPlayer(p);setSeasons(years);if(years.length)setSelectedSeason(years[0]);
       } catch (err) {
         console.error(err);
       } finally {
@@ -42,23 +44,26 @@ export default function PlayerProfile({ params }: { params: Promise<{ id: string
   useEffect(() => {
     if (!id) return;
     const playerId = id;
+    let active = true;
     async function loadStats() {
-      setStatsLoading(true);
+      setStatsLoading(true);setError('');setStatsData([]);setGameLog([]);
       try {
         const season = view === 'career' ? undefined : selectedSeason;
         const [stats, log] = await Promise.all([
           getPlayerStats(playerId, season),
           view === 'season' ? getPlayerGameLog(playerId, selectedSeason) : Promise.resolve([]),
         ]);
+        if (!active) return;
         setStatsData(stats);
         setGameLog(log);
-      } catch (err) {
-        console.error(err);
+      } catch {
+        if(active) setError('Unable to load stats. Please try another season or refresh.');
       } finally {
-        setStatsLoading(false);
+        if(active) setStatsLoading(false);
       }
     }
     loadStats();
+    return () => {active=false;};
   }, [id, view, selectedSeason]);
 
   const hittingStats = statsData.find((s: any) => s.group?.displayName === 'hitting')?.splits?.[0]?.stat;
@@ -116,6 +121,7 @@ Be specific with baseball terminology. 200-300 words.`;
 
   return (
     <div>
+      {error && <p role="alert">{error}</p>}
       {/* Back Button */}
       <Link href="/players" style={{
         color: 'var(--muted)', textDecoration: 'none',
@@ -226,11 +232,7 @@ Be specific with baseball terminology. 200-300 words.`;
                   minWidth: '100px',
                 }}
               >
-                <option value={2026}>2026 (Current)</option>
-                <option value={2025}>2025</option>
-                <option value={2024}>2024</option>
-                <option value={2023}>2023</option>
-                <option value={2022}>2022</option>
+                {seasons.map(year => <option key={year} value={year}>{year}</option>)}
               </select>
             </div>
           )}
@@ -283,7 +285,7 @@ Be specific with baseball terminology. 200-300 words.`;
             <span>
               {view === 'career' ? 'Career Stats' : `${selectedSeason} Season Stats`}
             </span>
-            {view === 'season' && selectedSeason === 2026 && (
+            {view === 'season' && selectedSeason === new Date().getFullYear() && (
               <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 500 }}>
                 Updates after every game
               </span>
@@ -339,8 +341,8 @@ Be specific with baseball terminology. 200-300 words.`;
           borderRadius: '10px', padding: '32px', textAlign: 'center',
           color: 'var(--muted)', marginBottom: '16px',
         }}>
-          {view === 'season' && selectedSeason === 2026
-            ? 'No stats yet for the 2026 season. Check back once the season gets underway.'
+          {view === 'season' && selectedSeason === new Date().getFullYear()
+            ? 'No stats are available for the selected season.'
             : `No stats found for ${view === 'career' ? 'career' : `${selectedSeason}`}.`}
         </div>
       )}
