@@ -40,23 +40,25 @@ npm start
 - **AI Analyst:** Ask “How did Aaron Judge perform in 2024 compared with 2023?” The model can request player search, stats, schedule, standings and trained predictions. The page shows the actual tool calls. Each question is independent; this is not a persistent chat session.
 - **Win Model:** View the chronological holdout evaluation and limitations.
 
-## Actual model result
+## Current-season prediction model
+
+For a selected game, the backend downloads both teams' game logs from that season. It uses only completed games before the selected date. Five home-minus-away features describe batting average, ERA, OPS, run differential per game, and last-10 win percentage. The intercept learns home-field advantage.
+
+Both teams need at least 10 prior completed games. Early-season games with insufficient history return a clear unavailable message instead of silently substituting last year's stats. Same-day results are excluded, and suspended games enter the history only after completion. Postseason requests also retrieve prior completed playoff games; evaluation below covers regular-season games only.
 
 | Item | Result |
 | --- | --- |
 | Algorithm | StandardScaler + logistic regression |
 | Training seasons | 2021–2024 |
-| Training games | 9,718 unique completed regular-season games |
-| Held-out season | 2025 |
-| Test games | 2,430 unique completed regular-season games |
-| Test accuracy | **56.21%** |
-| Always pick home baseline | 54.28% |
-| Brier score | 0.2438 |
-| Log loss | 0.6806 |
+| Training games | 8,892 |
+| Test season | 2025 |
+| Eligible test games | 2,243 of 2,430 |
+| Accuracy | 54.66% |
+| Always pick home baseline, same games | 53.68% |
+| Brier score | 0.2452 |
+| Log loss | 0.6832 |
 
-Features are home minus away **prior-season** batting average and ERA. The intercept learns home advantage because the target is always “home team wins.” No final statistics from the target season are used as inputs. Suspended/resumed games are deduplicated by MLB game ID. Ties, non-final games and games with incomplete features are excluded.
-
-The model was fixed before evaluating the held-out season; it has not been tuned to make that test score look better. This result does **not** support a “60%+ accuracy” claim. It is a baseline and does not account for current starting pitchers, injuries, roster changes, odds or live scores. It can produce predictions for the 2025 and 2026 game seasons using the included prior-season feature snapshots. Older in-training games are deliberately rejected. Retrain/update feature snapshots for later years.
+The feature specification and regularization were fixed before this run, without a test-season parameter sweep. The previous model also used 2025 as a benchmark, so this is a chronological historical evaluation, not a newly untouched prospective test. Accuracy is lower than the previous prior-season model on its different eligible game set; more recent inputs do not guarantee better predictive performance. Starting pitchers, injuries, announced lineups and market odds are not explicit model inputs. Predictions are pregame estimates, not live win probabilities. No claim of 60% accuracy is supported.
 
 ### Reproduce training (optional)
 
@@ -72,31 +74,29 @@ python ml/train.py
 
 The ZIP contains the raw MLB response cache used for this evaluation, so the same data can be reused. Delete `ml/cache` only if you deliberately want to download fresh historical responses. That may change results if MLB has corrected data. Cache files are excluded from Git by default.
 
-`models/win-model.json` holds the coefficients, scaling parameters, evaluation and prior-season features. `models/evaluation.json` is the concise report; `models/test-predictions.json` contains every held-out game and its prediction. `ml/train.py` exports all three. The runtime evaluates the same formula in TypeScript; it does not start a Python server.
+`models/win-model.json` holds the coefficients, scaling parameters and evaluation. `models/evaluation.json` is the concise report; `models/test-predictions.json` contains every held-out game and its prediction. `ml/train.py` exports all three. The runtime evaluates the same formula in TypeScript; it does not start a Python server.
 
 ## Architecture
 
-```mermaid
-flowchart TD
-  UI[React dashboard] --> MLB[MLB Stats API]
-  UI --> Routes[Next.js server routes]
-  Routes --> ESPN[ESPN data]
-  Routes --> Gemini[Gemini API]
-  Gemini --> Tools[Validated MLB lookup tools]
-  Tools --> MLB
-  Routes --> Model[Exported model JSON]
-  Python[Python training] --> Model
-```
+Every interactive data feature follows the same flow:
 
-- `lib/mlb-api.ts`: MLB query helpers, career and matchup semantics, fuzzy matching.
-- `lib/odds-utils.ts` and `app/api/odds/route.ts`: ESPN retrieval, schema handling and probability conversion.
-- `app/api/agent/route.ts`: bounded tool-calling loop with validated arguments and a visible lookup trace.
-- `lib/gemini.ts`: server-only provider call and grounding instructions.
-- `ml/train.py`: data collection, chronological split, fitting and evaluation.
-- `lib/prediction.ts`: server-side model loading and inference.
-- `app/compare/page.tsx`: independent player/season/group filters and Recharts visualization.
+**React page → Next.js API route → provider or saved model → JSON response → page display.**
 
-No database or FastAPI service is used in this version. Runtime data comes from the APIs; training uses JSON files. See `INTERVIEW_GUIDE.md` for the explanation and `VALIDATION.md` for checks and limitations.
+| File | Responsibility |
+| --- | --- |
+| `lib/mlb-api.ts` | Browser helpers that call `/api/mlb`; pages keep the same function names. |
+| `app/api/mlb/route.ts` | Validate player IDs, seasons and dates, choose the MLB helper, return JSON. |
+| `lib/mlb-server.ts` | Contact MLB and extract player stats, schedules, matchups and standings. |
+| `lib/player-search.ts` | Local fuzzy matching using edit distance. |
+| `lib/request.ts` | Shared request timeout and HTTP-error handling. |
+| `app/api/gemini/route.ts` | Validate a prepared prompt and return Gemini commentary. |
+| `app/api/agent/route.ts` | Let Gemini request predefined server tools and return an answer with a lookup trace. |
+| `app/api/odds/route.ts` | Retrieve ESPN scoreboard and game-summary odds. |
+| `app/api/predict/route.ts` | Return a prediction or model evaluation metadata. |
+| `lib/prediction.ts` | Load the exported model and calculate probabilities. |
+| `ml/train.py` | Train and evaluate the model offline in Python. |
+
+The agent uses the same server MLB helpers as `/api/mlb`; it does not make an HTTP request back into its own server. Fuzzy suggestions are local string matching, not a remote data request. No database or FastAPI service is used. The current-season model replaces the earlier prior-season baseline. `lib/pregame-features.ts` calculates the same pregame inputs used by Python training.
 
 ## Common problems
 

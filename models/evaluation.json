@@ -6,11 +6,12 @@
     2023,
     2024
   ],
-  "trainGames": 9718,
-  "testGames": 2430,
-  "accuracy": 0.5621399176954732,
-  "homeAlwaysBaseline": 0.5427983539094651,
-  "brierScore": 0.24380842145904408,
-  "logLoss": 0.6806166728702115,
-  "method": "Train on earlier seasons; evaluate once on the following untouched season. Features are prior-season team AVG and ERA differences; intercept learns home advantage. No target-season stats or outcomes are inputs."
+  "trainGames": 8892,
+  "testGames": 2243,
+  "totalTestSeasonGames": 2430,
+  "accuracy": 0.5465893892108783,
+  "homeAlwaysBaseline": 0.5367810967454302,
+  "brierScore": 0.24516256270268677,
+  "logLoss": 0.6832309339665119,
+  "method": "Train on 2021\u20132024; evaluate on eligible 2025 regular-season games. Each input uses only completed current-season games before the target date. Both teams need 10 prior games; delayed-completion targets are excluded. The previous model also used 2025 as a benchmark, so this is not a newly untouched prospective test."
 }

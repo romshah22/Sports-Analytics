@@ -1,20 +1,17 @@
-# Verification record
+# Current-season model verification
 
-Validated during this update:
+- `npm run typecheck`: passes.
+- `npm test`: 15 tests pass, including numerical agreement with every saved Python test prediction.
+- A real MLB fixture verifies that Python and TypeScript calculate identical current-season inputs.
+- Tests confirm that target-day and future results do not affect a historical input; duplicate games count once; suspended games wait for completion; ERA uses pitching outs; early-season insufficient history is reported.
+- Existing tests cover MLB route contracts, odds handling, fuzzy search, request failures and the mocked Gemini tool-calling loop.
+- Historical data and fitted model outputs are included for reproducibility. Evaluation uses 2,243 eligible 2025 games; accuracy is 54.66% versus a 53.68% home-team baseline on those games.
+- Regular-season validation does not establish postseason accuracy. Starting pitchers, injuries, announced lineups and market odds are not explicit inputs.
+- Historical records may contain later corrections from MLB. 2025 was also used by the earlier model as a benchmark.
+- No real Gemini key was supplied here; live AI responses remain unverified.
+- Public deployment and the user's local installation are not performed by this package.
 
-- `npm ci --dry-run --no-audit --no-fund`: passes with the repaired lockfile (the original failed clean-install validation).
-- `npm run build`: passes, including TypeScript compilation and route generation.
-- `npm test`: nine focused tests pass. They cover missing/malformed odds, both observed odds schemas, doubleheader disambiguation, correct run-line sign, Python/TypeScript inference parity for every held-out game, unique game IDs, career versus season versus matchup requests, date cutoffs, HTTP failure handling, fuzzy search, agent tool execution, and oversized prompt validation.
-- Running HTTP smoke checks: home, Compare, AI Analyst, Win Model, previews, odds and standings return 200. `/api/predict` returns the evaluation; a real MLB game request returns a numerical probability and feature provenance.
-- Live MLB checks: player search (including Babe Ruth), year-by-year stats, career batter–pitcher stats, date-bounded team stats, schedules, standings, and historical model data respond successfully.
-- Live ESPN check: the scoreboard omitted odds for the checked slate; the implemented summary fallback returned actual `pickcenter` odds for both games on 2026-10-04.
-- Missing Gemini credentials: both AI endpoints return an explicit setup message, with no fake/generated fallback output.
+- Production build succeeds. Live checks: `/model` responds; a July 2025 prediction matches the Python export exactly; a July 2026 prediction uses 87 current-season games through June 30.
+- Browser visual verification is unavailable because Chromium is not installed; the prediction UI still needs a visual check on the user’s Mac.
 
-Not verified / remaining limitations:
-
-- No Gemini API key was supplied, so real provider generation and actual LLM tool choices were not exercised. The agent loop was tested with a mocked model and data tool.
-- Automated browser interaction and screenshot QA could not run because the environment's Chromium download returned invalid archives. HTTP rendering is not a substitute for a full browser interaction test.
-- `npm run lint` is not clean. It flags broad `any` types in older/provider-facing code and synchronous state resets in effects, including newer components, plus CommonJS imports in the test harness. These rules are not disabled to hide the results. Production compilation and the behavioral tests pass. Type refinement and effect-structure cleanup remain follow-up work.
-- Upstream services may omit older data/markets, change schemas or become unavailable. Odds are provider snapshots and may be pregame/closing lines, not guaranteed real-time executable prices.
-- Historical raw data is cached for reproducibility. The model is a prior-season baseline, not a live in-game model, and its measured test accuracy is 56.21%, not 60%+.
-- This package was prepared for local use; no public deployment was performed.
+- Live postseason check: an October 8, 2025 matchup used 168 completed games through October 7, including earlier playoff results. Missing unplayed-round logs are handled; other provider failures remain errors.

@@ -1,9 +1,5 @@
-// app/standings/page.tsx
-// This is a Server Component — no 'use client' needed because
-// we're just fetching data and displaying it, no user interaction.
-
-export const dynamic = 'force-dynamic';
-
+'use client';
+import { useEffect, useState } from 'react';
 import { getStandings } from '@/lib/mlb-api';
 
 // Helper to get division name from the API data
@@ -11,14 +7,16 @@ function getDivisionName(div: any) {
   return div?.division?.name || 'Unknown Division';
 }
 
-export default async function StandingsPage() {
-  let records: any[] = [];
-
-  try {
-    records = await getStandings();
-  } catch (err) {
-    console.error(err);
-  }
+export default function StandingsPage() {
+  const [records, setRecords] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    getStandings().then(data => { if (active) setRecords(data); })
+      .catch(() => { if (active) setRecords([]); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   // Separate AL and NL — leagueId 103 = AL, 104 = NL
   const al = records.filter((r) => r.league?.id === 103);
@@ -36,7 +34,8 @@ export default async function StandingsPage() {
         Live standings pulled from the official MLB Stats API.
       </p>
 
-      {records.length === 0 && <p role="status">Standings are unavailable. Please refresh to try again.</p>}
+      {loading && <p role="status">Loading standings…</p>}
+      {!loading && records.length === 0 && <p role="status">Standings are unavailable. Please refresh to try again.</p>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
         {/* American League */}
         <div>

@@ -63,12 +63,11 @@ export default function HomePage() {
       </div>
 
       {/* Stats Overview Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
         {[
           { val: '750+', label: 'Active Players' },
           { val: '30', label: 'MLB Teams' },
           { val: '162', label: 'Game Season' },
-          { val: 'Free', label: 'No API Key Needed' },
         ].map((s) => (
           <div key={s.label} style={{
             background: 'var(--card)', border: '1px solid var(--border)',
